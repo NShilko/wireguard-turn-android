@@ -283,9 +283,9 @@ func getTokenChain(ctx context.Context, link string, creds VKCredentials, client
 
 				switch solveMode {
 				case captchaSolveModeAuto:
-					turnLog("[Captcha] Attempt 1. Try auto solving...")
+					turnLog("[Captcha] Attempt 1. Try auto solving (v2 engine)...")
 					if captchaErr.SessionToken != "" && captchaErr.RedirectURI != "" {
-						successToken, solveErr = solveVkCaptcha(ctx, captchaErr, streamID, client, profile, false)
+						successToken, solveErr = solveVkCaptchaV2Attempts(ctx, captchaErr, client, profile, nil, 2)
 						if solveErr != nil {
 							turnLog("[STREAM %d] [Captcha] Auto captcha failed: %v", streamID, solveErr)
 						}
