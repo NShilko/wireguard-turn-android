@@ -59,24 +59,16 @@ func ParseVkCaptchaError(errData map[string]interface{}) *VkCaptchaError {
 		return nil
 	}
 
-	// Extract captcha_sid
-	captchaSid, ok := errData["captcha_sid"].(string)
-	if !ok {
-		// try numeric
-		if sidNum, ok2 := errData["captcha_sid"].(float64); ok2 {
+	// Extract captcha_sid (OPTIONAL: VK Smart Captcha v2 "not_robot_captcha" omits it)
+	captchaSid, _ := errData["captcha_sid"].(string)
+	if captchaSid == "" {
+		if sidNum, okSid := errData["captcha_sid"].(float64); okSid {
 			captchaSid = fmt.Sprintf("%.0f", sidNum)
-		} else {
-			turnLog("missing captcha_sid in captcha error data")
-			return nil
 		}
 	}
 
-	// Extract captcha_img
-	captchaImg, ok := errData["captcha_img"].(string)
-	if !ok {
-		turnLog("missing captcha_img in captcha error data")
-		return nil
-	}
+	// Extract captcha_img (OPTIONAL: v2 captcha is redirect_uri/session_token based)
+	captchaImg, _ := errData["captcha_img"].(string)
 
 	// Extract error_msg
 	errorMsg, ok := errData["error_msg"].(string)

@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	mathrand "math/rand"
 	"regexp"
 	"strconv"
@@ -130,7 +129,7 @@ func solveVkCaptchaV2Attempts(
 	if maxAttempts < 1 {
 		maxAttempts = 1
 	}
-	log.Printf("[КАПЧА] Решаю VK Smart Captcha автоматически (v2, попыток=%d)...", maxAttempts)
+	turnLog("[КАПЧА] Решаю VK Smart Captcha автоматически (v2, попыток=%d)...", maxAttempts)
 
 	s := &captchaV2Session{ctx: ctx, client: client, profile: profile, savedProfile: savedProfile}
 
@@ -139,7 +138,7 @@ func solveVkCaptchaV2Attempts(
 		if solveErr == nil {
 			return token, nil
 		}
-		log.Printf("[КАПЧА] v2 попытка %d ошибка: %v", attempt, solveErr)
+		turnLog("[КАПЧА] v2 попытка %d ошибка: %v", attempt, solveErr)
 		if errors.Is(solveErr, errCaptchaV2RateLimit) {
 			return "", solveErr
 		}
@@ -185,12 +184,12 @@ func (s *captchaV2Session) solveOnce(captchaErr *VkCaptchaError) (string, error)
 		return "", errors.New("failed to find slider captcha settings")
 	}
 
-	log.Printf("[КАПЧА] v2 solving pow difficulty=%d", page.PowDifficulty)
+	turnLog("[КАПЧА] v2 solving pow difficulty=%d", page.PowDifficulty)
 	hash := solveCaptchaPoWV2(s.ctx, page.PowInput, page.PowDifficulty)
 	if hash == "" {
 		return "", errors.New("captcha pow failed")
 	}
-	log.Printf("[КАПЧА] v2 pow solved")
+	turnLog("[КАПЧА] v2 pow solved")
 
 	base := captchaV2BaseValues(captchaErr.SessionToken)
 	if _, settingsErr := s.captchaRequest("captchaNotRobot.settings", base); settingsErr != nil {
@@ -207,7 +206,7 @@ func (s *captchaV2Session) solveOnce(captchaErr *VkCaptchaError) (string, error)
 
 	if m := reCaptchaV2Version.FindStringSubmatch(page.ScriptURL); len(m) > 1 {
 		if m[1] != captchaV2ScriptVersion {
-			log.Printf("[КАПЧА] v2 script version drift: known=%s latest=%s", captchaV2ScriptVersion, m[1])
+			turnLog("[КАПЧА] v2 script version drift: known=%s latest=%s", captchaV2ScriptVersion, m[1])
 		}
 	}
 
@@ -222,7 +221,7 @@ func (s *captchaV2Session) solveOnce(captchaErr *VkCaptchaError) (string, error)
 	}
 	var token string
 	for {
-		log.Printf("[КАПЧА] v2 solving show_type=%s", showType)
+		turnLog("[КАПЧА] v2 solving show_type=%s", showType)
 		switch showType {
 		case "slider":
 			token, err = s.solveSliderCaptcha(captchaErr.SessionToken, browserFP, hash, sliderSettings, debugInfo)
@@ -235,7 +234,7 @@ func (s *captchaV2Session) solveOnce(captchaErr *VkCaptchaError) (string, error)
 			break
 		}
 		if errors.Is(err, errCaptchaV2Bot) && !strings.EqualFold(showType, "slider") && sliderSettings != "" {
-			log.Printf("[КАПЧА] v2 checkbox returned BOT, trying slider")
+			turnLog("[КАПЧА] v2 checkbox returned BOT, trying slider")
 			showType = "slider"
 			continue
 		}
@@ -247,7 +246,7 @@ func (s *captchaV2Session) solveOnce(captchaErr *VkCaptchaError) (string, error)
 	}
 
 	if _, endErr := s.captchaRequest("captchaNotRobot.endSession", base); endErr != nil {
-		log.Printf("[КАПЧА] v2 endSession failed: %v", endErr)
+		turnLog("[КАПЧА] v2 endSession failed: %v", endErr)
 	}
 	return token, nil
 }
@@ -302,7 +301,7 @@ func (s *captchaV2Session) fetchDebugInfo(scriptURL string) (string, error) {
 	}
 	v := string(m[1])
 	captchaV2DebugCache.Store(scriptURL, v)
-	log.Printf("[КАПЧА] v2 debug_info fetched url=%s", scriptURL)
+	turnLog("[КАПЧА] v2 debug_info fetched url=%s", scriptURL)
 	return v, nil
 }
 
@@ -395,9 +394,9 @@ func (s *captchaV2Session) performCaptchaCheck(
 		return nil, err
 	}
 	if check.ShowType != "" {
-		log.Printf("[КАПЧА] v2 check status=%s show_type=%s", check.Status, check.ShowType)
+		turnLog("[КАПЧА] v2 check status=%s show_type=%s", check.Status, check.ShowType)
 	} else {
-		log.Printf("[КАПЧА] v2 check status=%s", check.Status)
+		turnLog("[КАПЧА] v2 check status=%s", check.Status)
 	}
 	return check, nil
 }
@@ -525,7 +524,7 @@ func (s *captchaV2Session) doRaw(
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			log.Printf("[КАПЧА] v2 close body: %s", closeErr)
+			turnLog("[КАПЧА] v2 close body: %s", closeErr)
 		}
 	}()
 	return io.ReadAll(resp.Body)

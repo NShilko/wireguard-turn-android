@@ -192,7 +192,7 @@ class LogViewerActivity : AppCompatActivity() {
     }
 
     private suspend fun streamingLog() = withContext(Dispatchers.IO) {
-        val builder = ProcessBuilder().command("logcat", "-b", "all", "-v", "threadtime", "*:V")
+        val builder = ProcessBuilder().command("logcat", "-b", "all", "-v", "threadtime", "WireGuard/TurnClient:V", "WireGuard/JNI:W", "*:S")
         builder.environment()["LC_ALL"] = "C"
         var process: Process? = null
         try {
