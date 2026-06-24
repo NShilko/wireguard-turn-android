@@ -476,7 +476,5 @@ func getTokenChain(ctx context.Context, link string, creds VKCredentials, client
 		return "", "", "", fmt.Errorf("credential not found in turn_server: %v", ts)
 	}
 
-	vkDelayRandom(5000, 5000)
-
 	return username, credential, address, nil
 }

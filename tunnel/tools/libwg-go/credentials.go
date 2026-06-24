@@ -143,6 +143,12 @@ func invalidateAllCaches() {
 // fetchMu serializes credential fetching to avoid API rate limiting
 var fetchMu sync.Mutex
 
+// lastFetchAt + minFetchInterval pace CONSECUTIVE VK cred fetches against flood-control without
+// taxing an isolated/warm fetch (replaces the old flat 5s on every fetch success path).
+var lastFetchAt time.Time
+
+const minFetchInterval = 3 * time.Second
+
 // fetchFunc is the signature for credential retrieval functions (without cache logic)
 type fetchFunc func(ctx context.Context, link string) (string, string, string, error)
 
@@ -150,7 +156,17 @@ type fetchFunc func(ctx context.Context, link string) (string, string, string, e
 func serializeFetch(ctx context.Context, link string, storeFn fetchFunc) (string, string, string, error) {
 	fetchMu.Lock()
 	defer fetchMu.Unlock()
-	return storeFn(ctx, link)
+	// Pace consecutive fetches (anti-flood), but do not delay an isolated/warm fetch.
+	if wait := minFetchInterval - time.Since(lastFetchAt); wait > 0 && !lastFetchAt.IsZero() {
+		select {
+		case <-ctx.Done():
+			return "", "", "", ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	u, p, a, err := storeFn(ctx, link)
+	lastFetchAt = time.Now()
+	return u, p, a, err
 }
 
 // getCredsCached checks cache before fetching credentials.

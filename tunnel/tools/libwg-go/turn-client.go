@@ -108,13 +108,32 @@ var (
 	noDtlsRxErrorCount atomic.Uint64     // Errors in NoDTLS RX
 )
 
+// reconnectBackoff returns a capped exponential backoff with jitter, replacing the old fixed 1s
+// so a captcha wall or outage does not make every stream hammer VK once per second.
+func reconnectBackoff(failures int) time.Duration {
+	if failures < 1 {
+		failures = 1
+	}
+	shift := failures - 1
+	if shift > 5 {
+		shift = 5
+	}
+	d := time.Second << shift // 1,2,4,8,16,32s
+	if d > 30*time.Second {
+		d = 30 * time.Second
+	}
+	return d + time.Duration(time.Now().UnixNano()%500)*time.Millisecond
+}
+
 func (s *stream) run(link string, peer *net.UDPAddr, udp bool, okchan chan<- struct{}, turnIp string, turnPort int, peerType string) {
+	failures := 0
 	for {
 		select {
 		case <-s.ctx.Done(): return
 		default:
 		}
 
+		start := time.Now()
 		err := func() error {
 			s.ready.Store(false)
 			sCtx, sCancel := context.WithCancel(s.ctx)
@@ -199,12 +218,20 @@ func (s *stream) run(link string, peer *net.UDPAddr, udp bool, okchan chan<- str
 		}()
 
 		if err != nil && s.ctx.Err() == nil {
-			turnLog("[STREAM %d] Error: %v. Reconnecting in 1s...", s.id, err)
+			if time.Since(start) > 30*time.Second {
+				failures = 0 // had a working session; treat this drop as fresh
+			} else {
+				failures++
+			}
+			d := reconnectBackoff(failures)
+			turnLog("[STREAM %d] Error: %v. Reconnecting in %s...", s.id, err, d)
 			select {
 			case <-s.ctx.Done():
 				return
-			case <-time.After(1 * time.Second):
+			case <-time.After(d):
 			}
+		} else {
+			failures = 0
 		}
 	}
 }
