@@ -105,21 +105,23 @@ var (
 	noDtlsRxErrorCount atomic.Uint64     // Errors in NoDTLS RX
 )
 
-// reconnectBackoff returns a capped exponential backoff with jitter, replacing the old fixed 1s
-// so a captcha wall or outage does not make every stream hammer VK once per second.
+// reconnectBackoff returns a capped exponential backoff with jitter, replacing the old fixed 1s.
+// CIRCUIT-BREAKER: after a burst of failures (a dead/flagged link or VK rate-limit) it switches to a
+// multi-minute cool-down so we stop hammering VK auth+captcha and flagging the account/IP.
 func reconnectBackoff(failures int) time.Duration {
 	if failures < 1 {
 		failures = 1
 	}
+	jitter := time.Duration(time.Now().UnixNano()%500) * time.Millisecond
+	if failures > 5 {
+		return 2*time.Minute + jitter // cool-down to protect the VK account/IP
+	}
 	shift := failures - 1
-	if shift > 5 {
-		shift = 5
+	if shift > 4 {
+		shift = 4
 	}
-	d := time.Second << shift // 1,2,4,8,16,32s
-	if d > 30*time.Second {
-		d = 30 * time.Second
-	}
-	return d + time.Duration(time.Now().UnixNano()%500)*time.Millisecond
+	d := time.Second << shift // 1,2,4,8,16s
+	return d + jitter
 }
 
 func (s *stream) run(link string, peer *net.UDPAddr, udp bool, okchan chan<- struct{}, turnIp string, turnPort int, peerType string) {
