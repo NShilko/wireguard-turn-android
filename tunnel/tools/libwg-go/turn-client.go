@@ -34,9 +34,6 @@ import (
 	"github.com/pion/dtls/v3/pkg/crypto/selfsign"
 	"github.com/pion/logging"
 	"github.com/pion/turn/v5"
-	covertfp "github.com/theodorsm/covert-dtls/pkg/fingerprints"
-	"github.com/theodorsm/covert-dtls/pkg/mimicry"
-	"github.com/theodorsm/covert-dtls/pkg/randomize"
 	covertutils "github.com/theodorsm/covert-dtls/pkg/utils"
 )
 
@@ -299,11 +296,6 @@ func (s *stream) runNoDTLS(ctx context.Context, relayConn net.PacketConn, peer *
 	return nil
 }
 
-// dtlsCovertRandomize: false = mimic Firefox 126 DTLS 1.2 (stable, indistinguishable from real
-// Firefox WebRTC); true = randomize every ClientHello (defeats fingerprint blocklists; safe since we
-// control both ends). Flip to true if the mimicked fingerprint ever gets blocked. See net4people/bbs#603.
-const dtlsCovertRandomize = false
-
 // runDTLS handles packet relay with DTLS obfuscation
 func (s *stream) runDTLS(ctx context.Context, relayConn net.PacketConn, peer *net.UDPAddr, okchan chan<- struct{}, sendHandshake bool) error {
 	sCtx, sCancel := context.WithCancel(ctx)
@@ -315,23 +307,17 @@ func (s *stream) runDTLS(ctx context.Context, relayConn net.PacketConn, peer *ne
 	defer c1.Close()
 	defer c2.Close()
 
-	// DTLS fingerprint masking (net4people/bbs#603: RU blocks default pion/dtls by ja3/ja4 since 2026-03-30).
-	// covert-dtls rewrites the ClientHello to look like real Firefox WebRTC: adds use_srtp, drops
-	// connection_id, Firefox cipher/extension order. pion still negotiates the real cipher via CipherSuites.
+	// DTLS fingerprint hardening (net4people/bbs#603). Full Firefox ClientHello mimicry (covert-dtls)
+	// needs a cipher-matched server; the plain proxy_v1 server rejects the mimicked cipher offer
+	// (InsufficientSecurity). So keep the cipher the server accepts, but fix the two biggest tells the
+	// audit found: add use_srtp (the defining WebRTC extension, was missing) and drop connection_id
+	// (libwebrtc never sends it). Full mimicry lands with the proxy_v2 migration (we control that server).
 	dtlsCfg := &dtls.Config{
 		Certificates: []tls.Certificate{*s.cert},
 		InsecureSkipVerify: true,
 		ExtendedMasterSecret: dtls.RequireExtendedMasterSecret,
-		CipherSuites: covertutils.DefaultCipherSuites(),
+		CipherSuites: []dtls.CipherSuiteID{dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256},
 		SRTPProtectionProfiles: covertutils.DefaultSRTPProtectionProfiles(),
-	}
-	if dtlsCovertRandomize {
-		rch := &randomize.RandomizedMessageClientHello{RandomALPN: true}
-		dtlsCfg.ClientHelloMessageHook = rch.Hook
-	} else {
-		mch := &mimicry.MimickedClientHello{}
-		_ = mch.LoadFingerprint(covertfp.Mozilla_Firefox_126_0_1)
-		dtlsCfg.ClientHelloMessageHook = mch.Hook
 	}
 	dtlsConn, err := dtls.Client(c1, peer, dtlsCfg)
 	if err != nil { return fmt.Errorf("DTLS client creation failed: %w", err) }
